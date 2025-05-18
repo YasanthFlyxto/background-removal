@@ -8,3 +8,4 @@ Install the necessary dependencies:
 - For Python: `pip install torch torchvision pillow numpy`
 
 Start : `npm run dev`
+Visit : `http://localhost:3000`
