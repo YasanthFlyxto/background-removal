@@ -1,6 +1,6 @@
 To Use This
 
-Extract this zip into root folder : https://drive.google.com/file/d/12uGMR8OmIEDGZIp23DOgE6TYfwR-Tt0h/view?usp=sharing
+Extract this zip into root folder (Pre-Trained U2net) : https://drive.google.com/file/d/12uGMR8OmIEDGZIp23DOgE6TYfwR-Tt0h/view?usp=sharing
 
 Install the necessary dependencies:
 
