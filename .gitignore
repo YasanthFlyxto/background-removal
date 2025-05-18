@@ -25,3 +25,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Model checkpoints and large files
+ckpt/
+*.pth
+*.pt
+*.bin
+*.onnx
+*.tflite
