@@ -1,11 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { spawn } from "child_process"
 import fs from "fs"
 import path from "path"
 import os from "os"
 import { v4 as uuidv4 } from "uuid"
+import { spawn } from "child_process"
 import { v2 as cloudinary } from "cloudinary"
-import clientPromise from "@/lib/mongodb"
 
 // Configure Cloudinary with server-side environment variables
 cloudinary.config({
@@ -16,27 +15,23 @@ cloudinary.config({
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
-    const file = formData.get("file") as File
-    const nic = formData.get("nic") as string
-    const dealerName = (formData.get("dealerName") as string) || undefined
-    const area = (formData.get("area") as string) || undefined
-    const classification = (formData.get("classification") as string) || undefined
+    const { imageUrl } = await request.json()
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
-    }
-
-    if (!nic) {
-      return NextResponse.json({ error: "NIC number is required" }, { status: 400 })
+    if (!imageUrl) {
+      return NextResponse.json({ error: "No image URL provided" }, { status: 400 })
     }
 
     // Create temporary directory
     const tempDir = path.join(os.tmpdir(), "bg-removal-" + uuidv4())
     fs.mkdirSync(tempDir, { recursive: true })
 
-    // Save the uploaded file
-    const buffer = Buffer.from(await file.arrayBuffer())
+    // Download the image from the URL
+    const response = await fetch(imageUrl)
+    if (!response.ok) {
+      throw new Error(`Failed to download image: ${response.status} ${response.statusText}`)
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer())
     const inputPath = path.join(tempDir, "input.png")
     fs.writeFileSync(inputPath, buffer)
 
@@ -49,28 +44,15 @@ export async function POST(request: NextRequest) {
     if (result.success) {
       try {
         // Upload to Cloudinary
-        const cloudinaryResult = await uploadToCloudinary(outputPath, nic)
-
-        // Store in MongoDB
-        const dbResult = await saveToMongoDB({
-          nic,
-          dealerName,
-          area,
-          classification,
-          imageUrl: cloudinaryResult.secure_url,
-          cloudinaryPublicId: cloudinaryResult.public_id,
-          processedAt: new Date(),
-        })
+        const cloudinaryResult = await uploadToCloudinary(outputPath)
 
         // Clean up temporary files
         fs.rmSync(tempDir, { recursive: true, force: true })
 
-        // Return the NIC, image URL, and MongoDB ID
+        // Return the processed image URL
         return NextResponse.json({
-          nic: nic,
-          dealerName,
-          imageUrl: cloudinaryResult.secure_url,
-          _id: dbResult.insertedId,
+          processedImageUrl: cloudinaryResult.secure_url,
+          cloudinaryPublicId: cloudinaryResult.public_id,
         })
       } catch (uploadError) {
         console.error("Upload error:", uploadError)
@@ -78,7 +60,7 @@ export async function POST(request: NextRequest) {
         // Clean up temporary files
         fs.rmSync(tempDir, { recursive: true, force: true })
 
-        return NextResponse.json({ error: "Failed to upload or save image data" }, { status: 500 })
+        return NextResponse.json({ error: "Failed to upload processed image" }, { status: 500 })
       }
     } else {
       // Clean up temporary files
@@ -87,7 +69,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: result.error || "Failed to process image" }, { status: 500 })
     }
   } catch (error) {
-    console.error("Error in removeBackground:", error)
+    console.error("Error in processWithU2Net:", error)
     return NextResponse.json({ error: "An unexpected error occurred" }, { status: 500 })
   }
 }
@@ -125,12 +107,11 @@ async function processImageWithU2Net(
 }
 
 // Upload the processed image to Cloudinary
-async function uploadToCloudinary(imagePath: string, nic: string): Promise<any> {
+async function uploadToCloudinary(imagePath: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    // Use the upload preset if available
     const uploadOptions: any = {
-      folder: "background-removal",
-      public_id: `${nic}-${Date.now()}`,
+      folder: "background-removal-preview",
+      public_id: `preview-${Date.now()}`,
       overwrite: true,
     }
 
@@ -147,21 +128,4 @@ async function uploadToCloudinary(imagePath: string, nic: string): Promise<any> 
       }
     })
   })
-}
-
-// Save the image data to MongoDB
-async function saveToMongoDB(data: {
-  nic: string
-  dealerName?: string
-  area?: string
-  classification?: string
-  imageUrl: string
-  cloudinaryPublicId: string
-  processedAt: Date
-}) {
-  const client = await clientPromise
-  const db = client.db(process.env.MONGODB_DB || "background-removal")
-  const collection = db.collection("processed-images")
-
-  return await collection.insertOne(data)
 }
